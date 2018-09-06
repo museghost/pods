@@ -400,4 +400,145 @@ namespace pods
         char* current_;
         size_t available_;
     };
+
+    class ReuseInputBuffer
+    {
+        friend class InputStream;
+    public:
+        explicit ReuseInputBuffer(size_t size)
+            : allocated_(static_cast<char*>(malloc(size)))
+            , maxSize_(size)
+            , data_(allocated_)
+            , pos_(0)
+        {
+            assert(size > 0);
+
+            if (allocated_ == nullptr)
+            {
+                throw std::bad_alloc();
+            }
+        }
+
+        ReuseInputBuffer(const char* data, size_t size) noexcept
+            : allocated_(nullptr)
+            , maxSize_(size)
+            , data_(data)
+            , pos_(0)
+        {
+            assert(size > 0);
+        }
+
+        ~ReuseInputBuffer()
+        {
+            if (allocated_ != nullptr)
+            {
+                free(allocated_);
+            }
+        }
+
+        ReuseInputBuffer(const ReuseInputBuffer&) = delete;
+        ReuseInputBuffer& operator=(const ReuseInputBuffer&) = delete;
+
+        ReuseInputBuffer(InputBuffer&&) = delete;
+        ReuseInputBuffer& operator=(ReuseInputBuffer&&) = delete;
+
+        Error get(bool& value) noexcept
+        {
+            Bool tmp = False;
+
+            PODS_SAFE_CALL(get(tmp));
+
+            switch (tmp)
+            {
+            case False:
+                value = false;
+                return Error::NoError;
+            case True:
+                value = true;
+                return Error::NoError;
+            }
+
+            return Error::CorruptedArchive;
+        }
+
+        template <class T>
+        Error get(T& value, typename std::enable_if<std::is_arithmetic<T>::value && sizeof(T) == 1, int>::type = 0) noexcept
+        {
+            if (pos_ + sizeof(T) <= maxSize_)
+            {
+                value = static_cast<T>(data_[pos_]);
+                pos_ += sizeof(T);
+                return Error::NoError;
+            }
+
+            return Error::UnexpectedEnd;
+        }
+
+        template <class T>
+        Error get(T& value, typename std::enable_if<std::is_arithmetic<T>::value && sizeof(T) != 1, int>::type = 0) noexcept
+        {
+            return get(reinterpret_cast<char*>(&value), sizeof(T));
+        }
+
+        Error get(char* data, size_t size) noexcept
+        {
+            if (pos_ + size <= maxSize_)
+            {
+                auto begin = data_ + pos_;
+                memcpy(data, begin, size);
+                pos_ += size;
+                return Error::NoError;
+            }
+
+            return Error::UnexpectedEnd;
+        }
+
+        template <class T>
+        Error get(T* data, size_t size) noexcept
+        {
+            const auto totalSize = size * sizeof(T);
+            return get(reinterpret_cast<char*>(data), totalSize);
+        }
+
+        void assign(const char* data, size_t size) {
+            data_ = data;
+            assert(size <= maxSize_);
+            maxSize_ = size;
+            pos_ = 0;
+        }
+
+    private:
+        void gotoEnd() noexcept
+        {
+            pos_ = maxSize_;
+        }
+
+        void reset(size_t newSize) noexcept
+        {
+            assert(newSize <= maxSize_);
+            maxSize_ = newSize;
+            pos_ = 0;
+        }
+
+        char* data() const noexcept
+        {
+            return allocated_;
+        }
+
+        size_t maxSize() const noexcept
+        {
+            return maxSize_;
+        }
+
+        size_t available() const noexcept
+        {
+            return maxSize_ - pos_;
+        }
+
+    private:
+        char* allocated_;
+        size_t maxSize_;
+        const char* data_;
+        size_t pos_;
+    };
 }
