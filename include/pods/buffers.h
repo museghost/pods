@@ -500,10 +500,10 @@ namespace pods
             return get(reinterpret_cast<char*>(data), totalSize);
         }
 
-        void assign(const char* data, size_t size) {
+        void assign(const char* data, size_t newSize) {
             data_ = data;
-            assert(size <= maxSize_);
-            maxSize_ = size;
+            assert(newSize <= maxSize_);
+            maxSize_ = newSize;
             pos_ = 0;
         }
 
